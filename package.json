@@ -1,17 +1,23 @@
 {
     "author": "jacob.rusch@gmail.com",
-    "dependencies": {},
+    "dependencies": {
+        "pebble-clay": "^1.0.3"
+    },
     "keywords": [],
     "name": "dial",
     "pebble": {
         "capabilities": [
             "location",
+            "configurable",
             "health"
         ],
         "displayName": "Dial",
         "enableMultiJS": true,
         "messageKeys": [
+            "KEY_INVERT_COLORS",
+            "KEY_TEMP_UNIT",
             "KEY_TEMP",
+            "KEY_TEMP_C",
             "KEY_ICON"
         ],
         "projectType": "native",
@@ -212,5 +218,5 @@
             "watchface": true
         }
     },
-    "version": "1.3.0"
+    "version": "1.4.0"
 }

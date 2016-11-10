@@ -1,3 +1,7 @@
+var Clay = require('pebble-clay');
+var clayConfig = require('./config');
+var clay = new Clay(clayConfig);
+
 var myAPIKey = '287396dabce7a142ea95111fe9cc091c';
 
 var xhrRequest = function (url, type, callback) {
@@ -11,8 +15,6 @@ var xhrRequest = function (url, type, callback) {
 
 function locationSuccess(pos) {
   // Construct URL
-  pos.coords.latitude = "29.5599752";
-  pos.coords.longitude = "-98.7638933";
   var weatherUrl = "http://api.openweathermap.org/data/2.5/weather?lat=" +
       pos.coords.latitude + "&lon=" + pos.coords.longitude + '&appid=' + myAPIKey + '&units=imperial';  
 
@@ -23,7 +25,7 @@ function locationSuccess(pos) {
             
       // Delivered in imperial so no need for adjustment
       var temp = Math.round(json.main.temp);
-      console.log("Temperature is " + temp);     
+      console.log("Temperature is " + temp);   
       
       var icon = json.weather[0].icon;
       console.log("Icon is " + icon);

@@ -2,28 +2,11 @@
 // Written by Jacob Rusch
 // 10/3/2016
 // code for analog watch dial
-// only for Dorite
+// only for Aplite, Basalt, and Dorite
 ////////////////////////////////////////////
 
 #include <pebble.h>
-
-///////////////////////
-// weather variables //
-///////////////////////
-#define KEY_TEMP
-#define KEY_ICON
-
-////////////////////
-// font variables //
-////////////////////
-#define WORD_FONT RESOURCE_ID_ULTRALIGHT_14
-#define NUMBER_FONT RESOURCE_ID_ARCON_FONT_14
-
-/////////////////////
-// color variables //
-/////////////////////
-#define BACKGROUND_COLOR GColorBlack
-#define FOREGROUND_COLOR GColorWhite
+#include "watchface.h"
 
 static Window *s_main_window;
 static Layer *s_dial_layer, *s_hands_layer, *s_temp_circle, *s_battery_circle, *s_health_circle;
@@ -37,28 +20,47 @@ static double step_count;
 static char *char_current_steps;
 static bool charging;
 
-// //////////////////////
-// // hide clock hands //
-// //////////////////////
-// static void hide_hands() {
-//   layer_set_hidden(s_hands_layer, true); 
-// }
+static ClaySettings settings; // An instance of the struct
 
-// //////////////////////
-// // show clock hands //
-// //////////////////////
-// static void show_hands() {
-//   layer_set_hidden(s_hands_layer, false);
-// }
+///////////////////////////////
+// set default Clay settings //
+///////////////////////////////
+static void config_default() {
+	settings.BackgroundColor = GColorBlack;
+  settings.ForegroundColor = GColorWhite;
+  settings.InvertColors = false;
+}
 
-// static void tap_handler(AccelAxisType axis, int32_t direction) {
-//   if(direction > 0) {
-//     hide_hands();
-//     app_timer_register(5000, show_hands, NULL);
-//   } else {
-//     show_hands();
-//   }
-// }
+/////////////////////////////////////
+// load default settings from Clay //
+/////////////////////////////////////
+static void config_load() {
+	config_default(); // Load the default settings
+	persist_read_data(SETTINGS_KEY, &settings, sizeof(settings));	// Read settings from persistent storage, if they exist
+  
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "config_load");
+}
+
+///////////////////////
+// sets watch colors //
+///////////////////////
+static void setColors() {
+  window_set_background_color(s_main_window, settings.BackgroundColor); // set background color
+  text_layer_set_text_color(s_temp_layer, settings.ForegroundColor);
+  text_layer_set_text_color(s_health_layer, settings.ForegroundColor);
+  text_layer_set_text_color(s_day_text_layer, settings.ForegroundColor);
+  text_layer_set_text_color(s_date_text_layer, settings.ForegroundColor);
+  layer_mark_dirty(s_hands_layer); // draw hands
+  load_icons(); // load appropriate icon
+  
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "setColors");
+}
+
+static void config_save() {
+  persist_write_data(SETTINGS_KEY, &settings, sizeof(settings));
+  
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "config_save");
+}
 
 /////////////////////////
 // draws dial on watch //
@@ -68,7 +70,7 @@ static void dial_update_proc(Layer *layer, GContext *ctx) {
   GPoint center = grect_center_point(&bounds); 
   
   // draw dial
-  graphics_context_set_fill_color(ctx, BACKGROUND_COLOR);
+  graphics_context_set_fill_color(ctx, settings.BackgroundColor);
   graphics_fill_circle(ctx, center, (bounds.size.w+buf)/2);
   
   // set number of tickmarks
@@ -80,7 +82,7 @@ static void dial_update_proc(Layer *layer, GContext *ctx) {
   
   // set colors
   graphics_context_set_antialiased(ctx, true);
-  graphics_context_set_stroke_color(ctx, FOREGROUND_COLOR);
+  graphics_context_set_stroke_color(ctx, settings.ForegroundColor);
   graphics_context_set_stroke_width(ctx, 6);
   
   for(int i=0; i<tick_marks_number; i++) {
@@ -122,9 +124,9 @@ static void dial_update_proc(Layer *layer, GContext *ctx) {
 // update temperature //
 ////////////////////////
 static void temp_update_proc(Layer *layer, GContext *ctx) {
-  graphics_context_set_stroke_color(ctx, FOREGROUND_COLOR);
+  graphics_context_set_stroke_color(ctx, settings.ForegroundColor);
   GPoint center = GPoint(144/2, 36);
-  graphics_context_set_fill_color(ctx, FOREGROUND_COLOR);
+  graphics_context_set_fill_color(ctx, settings.ForegroundColor);
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_circle(ctx, center, 40/2);
 }
@@ -134,11 +136,11 @@ static void temp_update_proc(Layer *layer, GContext *ctx) {
 ///////////////////////////
 static void battery_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = GRect(4, 64, 40, 40);
-  graphics_context_set_fill_color(ctx, FOREGROUND_COLOR);
+  graphics_context_set_fill_color(ctx, settings.ForegroundColor);
   graphics_fill_radial(ctx, bounds, GOvalScaleModeFitCircle, 2, DEG_TO_TRIGANGLE(360-(battery_percent*3.6)), DEG_TO_TRIGANGLE(360));
   
   // draw vertical battery
-  graphics_context_set_stroke_color(ctx, FOREGROUND_COLOR);
+  graphics_context_set_stroke_color(ctx, settings.ForegroundColor);
   graphics_draw_round_rect(ctx, GRect(21, 77, 7, 14), 1);
   int batt = battery_percent/10;
   graphics_fill_rect(ctx, GRect(23, 89-batt, 3, batt), 1, GCornerNone);
@@ -153,7 +155,7 @@ static void battery_update_proc(Layer *layer, GContext *ctx) {
 //////////////////////////
 static void health_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = GRect(50, 110, 40, 40);
-  graphics_context_set_fill_color(ctx, FOREGROUND_COLOR);
+  graphics_context_set_fill_color(ctx, settings.ForegroundColor);
   graphics_fill_radial(ctx, bounds, GOvalScaleModeFitCircle, 2, DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE((step_count/step_goal)*360));
 }
 
@@ -209,47 +211,47 @@ static void ticks_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_antialiased(ctx, true);
    
   // draw wide part of minute hand in background color for shadow
-  graphics_context_set_stroke_color(ctx, BACKGROUND_COLOR);  
+  graphics_context_set_stroke_color(ctx, settings.BackgroundColor);  
   graphics_context_set_stroke_width(ctx, 8);  
   graphics_draw_line(ctx, minute_hand_start, minute_hand_end);  
   
   // draw minute line
-  graphics_context_set_stroke_color(ctx, FOREGROUND_COLOR);  
+  graphics_context_set_stroke_color(ctx, settings.ForegroundColor);  
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_line(ctx, center, minute_hand_start);  
   
   // draw wide part of minute hand
-   graphics_context_set_stroke_color(ctx, FOREGROUND_COLOR);
+   graphics_context_set_stroke_color(ctx, settings.ForegroundColor);
   graphics_context_set_stroke_width(ctx, 6);  
   graphics_draw_line(ctx, minute_hand_start, minute_hand_end);   
   
   // draw wide part of hour hand in background color for shadow
-  graphics_context_set_stroke_color(ctx, BACKGROUND_COLOR);  
+  graphics_context_set_stroke_color(ctx, settings.BackgroundColor);  
   graphics_context_set_stroke_width(ctx, 8);
   graphics_draw_line(ctx, hour_hand_start, hour_hand_end);  
   
   // draw small hour line
-  graphics_context_set_stroke_color(ctx, FOREGROUND_COLOR); 
+  graphics_context_set_stroke_color(ctx, settings.ForegroundColor); 
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_line(ctx, center, hour_hand_start);   
   
   // draw wide part of hour hand
-  graphics_context_set_stroke_color(ctx, FOREGROUND_COLOR);  
+  graphics_context_set_stroke_color(ctx, settings.ForegroundColor);  
   graphics_context_set_stroke_width(ctx, 6);
   graphics_draw_line(ctx, hour_hand_start, hour_hand_end);
   
   // draw inner hour line
-  graphics_context_set_stroke_color(ctx, BACKGROUND_COLOR);  
+  graphics_context_set_stroke_color(ctx, settings.BackgroundColor);  
   graphics_context_set_stroke_width(ctx, 2);
   graphics_draw_line(ctx, filler_start, filler_end);    
   
   // circle overlay
   // draw circle in middle 
-  graphics_context_set_fill_color(ctx, FOREGROUND_COLOR);  
+  graphics_context_set_fill_color(ctx, settings.ForegroundColor);  
   graphics_fill_circle(ctx, center, 3);
   
   // dot in the middle
-  graphics_context_set_fill_color(ctx, BACKGROUND_COLOR);
+  graphics_context_set_fill_color(ctx, settings.BackgroundColor);
   graphics_fill_circle(ctx, center, 1);    
 }
 
@@ -260,12 +262,7 @@ static void main_window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
   
-  // set background color
-  window_set_background_color(s_main_window, BACKGROUND_COLOR); // default GColorWhite
-  
-  // register button clicks
-//   window_set_click_config_provider(window, click_config_provider);
-  
+  // fonts
   s_word_font = fonts_load_custom_font(resource_get_handle(WORD_FONT));
   s_number_font = fonts_load_custom_font(resource_get_handle(NUMBER_FONT));
 
@@ -281,7 +278,6 @@ static void main_window_load(Window *window) {
   
   // create temp text
   s_temp_layer = text_layer_create(GRect(60, 19, 24, 16));
-  text_layer_set_text_color(s_temp_layer, FOREGROUND_COLOR);
   text_layer_set_background_color(s_temp_layer, GColorClear);
   text_layer_set_text_alignment(s_temp_layer, GTextAlignmentCenter);
   text_layer_set_font(s_temp_layer, s_number_font);
@@ -308,7 +304,6 @@ static void main_window_load(Window *window) {
   
   // create health layer text
   s_health_layer = text_layer_create(GRect(54, 115, 36, 16));
-  text_layer_set_text_color(s_health_layer, FOREGROUND_COLOR);
   text_layer_set_background_color(s_health_layer, GColorClear);
   text_layer_set_text_alignment(s_health_layer, GTextAlignmentCenter);
   text_layer_set_font(s_health_layer, s_number_font);
@@ -328,7 +323,6 @@ static void main_window_load(Window *window) {
   
   // Day Text
   s_day_text_layer = text_layer_create(GRect(90, 75, 34, 14));
-  text_layer_set_text_color(s_day_text_layer, FOREGROUND_COLOR);
   text_layer_set_background_color(s_day_text_layer, GColorClear);
   text_layer_set_text_alignment(s_day_text_layer, GTextAlignmentCenter);
   text_layer_set_font(s_day_text_layer, s_word_font);
@@ -336,7 +330,6 @@ static void main_window_load(Window *window) {
   
   // Date text
   s_date_text_layer = text_layer_create(GRect(124, 75, 17, 14));
-  text_layer_set_text_color(s_date_text_layer, FOREGROUND_COLOR);
   text_layer_set_background_color(s_date_text_layer, GColorClear);
   text_layer_set_text_alignment(s_date_text_layer, GTextAlignmentCenter);
   text_layer_set_font(s_date_text_layer, s_number_font);
@@ -346,6 +339,11 @@ static void main_window_load(Window *window) {
   s_hands_layer = layer_create(bounds);
   layer_set_update_proc(s_hands_layer, ticks_update_proc);
   layer_add_child(window_layer, s_hands_layer);
+
+	setColors();	
+	config_save(); 
+  
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "main_window_load");
 }
 
 ///////////////////////
@@ -483,10 +481,55 @@ static void main_window_unload(Window *window) {
   bitmap_layer_destroy(s_charging_bitmap_layer);
 }
 
-//////////////////////////////////////
-// display appropriate weather icon //
-//////////////////////////////////////
+///////////////////////////////////////////////////
+// display appropriate weather icon              //
+// works with DarkSky.net and OpenWeatherMap.org //
+///////////////////////////////////////////////////
 static void load_icons() {
+  // if inverted
+  if(settings.InvertColors) {
+    // populate icon variable
+    if(strcmp(icon_buf, "clear-day")==0 || 
+       strcmp(icon_buf, "01d")==0) {
+      s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_CLEAR_SKY_DAY_BLACK_ICON);  
+    } else if(strcmp(icon_buf, "clear-night")==0 || 
+              strcmp(icon_buf, "01n")==0) {
+      s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_CLEAR_SKY_NIGHT_BLACK_ICON);
+    } else if(strcmp(icon_buf, "rain")==0 ||
+             strcmp(icon_buf, "09d")==0 || 
+             strcmp(icon_buf, "09n")==0 || 
+             strcmp(icon_buf, "10d")==0 || 
+             strcmp(icon_buf, "10n")==0 || 
+             strcmp(icon_buf, "11d")==0 || 
+             strcmp(icon_buf, "11n")==0 ||              
+             strcmp(icon_buf, "50d")==0 || 
+             strcmp(icon_buf, "50n")==0) {
+      s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_RAIN_BLACK_ICON);
+    } else if(strcmp(icon_buf, "snow")==0 || 
+              strcmp(icon_buf, "13d")==0 || 
+              strcmp(icon_buf, "13n")==0) {
+      s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_SNOW_BLACK_ICON);
+    } else if(strcmp(icon_buf, "sleet")==0) {
+      s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_SLEET_BLACK_ICON);
+    } else if(strcmp(icon_buf, "wind")==0) {
+      s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_WIND_BLACK_ICON);
+    } else if(strcmp(icon_buf, "fog")==0) {
+      s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_FOG_BLACK_ICON);
+    } else if(strcmp(icon_buf, "cloudy")==0) {
+      s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_CLOUDY_BLACK_ICON);
+    } else if(strcmp(icon_buf, "partly-cloudy-day")==0 || 
+              strcmp(icon_buf, "02d")==0 || 
+              strcmp(icon_buf, "03d")==0 || 
+              strcmp(icon_buf, "04d")==0) {
+      s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PARTLY_CLOUDY_DAY_BLACK_ICON);
+    } else if(strcmp(icon_buf, "partly-cloudy-night")==0 || 
+              strcmp(icon_buf, "02n")==0 || 
+              strcmp(icon_buf, "03n")==0 || 
+              strcmp(icon_buf, "04n")==0) {
+      s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PARTLY_CLOUDY_NIGHT_BLACK_ICON);
+    } 
+  } else {
+  // not inverted
   // populate icon variable
     if(strcmp(icon_buf, "clear-day")==0 || 
        strcmp(icon_buf, "01d")==0) {
@@ -499,12 +542,12 @@ static void load_icons() {
              strcmp(icon_buf, "09n")==0 || 
              strcmp(icon_buf, "10d")==0 || 
              strcmp(icon_buf, "10n")==0 || 
+             strcmp(icon_buf, "11d")==0 || 
+             strcmp(icon_buf, "11n")==0 ||              
              strcmp(icon_buf, "50d")==0 || 
              strcmp(icon_buf, "50n")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_RAIN_WHITE_ICON);
     } else if(strcmp(icon_buf, "snow")==0 || 
-              strcmp(icon_buf, "11d")==0 || 
-              strcmp(icon_buf, "11n")==0 || 
               strcmp(icon_buf, "13d")==0 || 
               strcmp(icon_buf, "13n")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_SNOW_WHITE_ICON);
@@ -526,29 +569,8 @@ static void load_icons() {
               strcmp(icon_buf, "03n")==0 || 
               strcmp(icon_buf, "04n")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PARTLY_CLOUDY_NIGHT_WHITE_ICON);
-    }  
-//   // populate icon variable
-//     if(strcmp(icon_buf, "clear-day")==0) {
-//       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_CLEAR_SKY_DAY_WHITE_ICON);  
-//     } else if(strcmp(icon_buf, "clear-night")==0) {
-//       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_CLEAR_SKY_NIGHT_WHITE_ICON);
-//     }else if(strcmp(icon_buf, "rain")==0) {
-//       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_RAIN_WHITE_ICON);
-//     } else if(strcmp(icon_buf, "snow")==0) {
-//       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_SNOW_WHITE_ICON);
-//     } else if(strcmp(icon_buf, "sleet")==0) {
-//       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_SLEET_WHITE_ICON);
-//     } else if(strcmp(icon_buf, "wind")==0) {
-//       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_WIND_WHITE_ICON);
-//     } else if(strcmp(icon_buf, "fog")==0) {
-//       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_FOG_WHITE_ICON);
-//     } else if(strcmp(icon_buf, "cloudy")==0) {
-//       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_CLOUDY_WHITE_ICON);
-//     } else if(strcmp(icon_buf, "partly-cloudy-day")==0) {
-//       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PARTLY_CLOUDY_DAY_WHITE_ICON);
-//     } else if(strcmp(icon_buf, "partly-cloudy-night")==0) {
-//       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PARTLY_CLOUDY_NIGHT_WHITE_ICON);
-//     }
+    }   
+  }
   // populate weather icon
   if(s_weather_bitmap_layer) {
     bitmap_layer_destroy(s_weather_bitmap_layer);
@@ -557,34 +579,64 @@ static void load_icons() {
   bitmap_layer_set_compositing_mode(s_weather_bitmap_layer, GCompOpSet);  
   bitmap_layer_set_bitmap(s_weather_bitmap_layer, s_weather_bitmap); 
   layer_add_child(s_dial_layer, bitmap_layer_get_layer(s_weather_bitmap_layer)); 
+  
+  // populate health icon
+  if(s_health_bitmap_layer) {
+    bitmap_layer_destroy(s_health_bitmap_layer);
+  }
+  if(settings.InvertColors) {
+    s_health_bitmap = gbitmap_create_with_resource(RESOURCE_ID_SHOE_BLACK_ICON);
+  } else {
+    s_health_bitmap = gbitmap_create_with_resource(RESOURCE_ID_SHOE_WHITE_ICON);
+  }
+  s_health_bitmap_layer = bitmap_layer_create(GRect(60, 131, 24, 16));
+  bitmap_layer_set_compositing_mode(s_health_bitmap_layer, GCompOpSet);
+  bitmap_layer_set_bitmap(s_health_bitmap_layer, s_health_bitmap); 
+  layer_add_child(s_dial_layer, bitmap_layer_get_layer(s_health_bitmap_layer));  
 }
 
-///////////////////
-// weather calls //
-///////////////////
+////////////////////////////
+// weather and Clay calls //
+////////////////////////////
 static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
   // Store incoming information
-  static char temp_buf[64];
+  static char temp_buf[32];
 
   // Read tuples for data
   Tuple *temp_tuple = dict_find(iterator, MESSAGE_KEY_KEY_TEMP);
   Tuple *icon_tuple = dict_find(iterator, MESSAGE_KEY_KEY_ICON);  
-
+  
   // If all data is available, use it
   if(temp_tuple && icon_tuple) {
     
     // temp
-    snprintf(temp_buf, sizeof(temp_buf), "%d°", (int)temp_tuple->value->int32);
+    snprintf(temp_buf, sizeof(temp_buf), "%d°", (int)temp_tuple->value->int32);  
     text_layer_set_text(s_temp_layer, temp_buf);
 
     // icon
     snprintf(icon_buf, sizeof(icon_buf), "%s", icon_tuple->value->cstring);
   }  
   
+  // load weather icons
   load_icons();
+  
+  // determine if user inverted colors
+  Tuple *invert_colors_t = dict_find(iterator, MESSAGE_KEY_KEY_INVERT_COLORS);
+  if(invert_colors_t) { settings.InvertColors = invert_colors_t->value->int32 == 1; }
+  
+  if(settings.InvertColors==1) {
+    settings.BackgroundColor = GColorWhite;
+    settings.ForegroundColor = GColorBlack;
+  } else {
+    settings.BackgroundColor = GColorBlack;
+    settings.ForegroundColor = GColorWhite;
+  }
+  
+	setColors();	
+	config_save();
+  
   APP_LOG(APP_LOG_LEVEL_INFO, "inbox_received_callback");
 }
-
 static void inbox_dropped_callback(AppMessageResult reason, void *context) {
   APP_LOG(APP_LOG_LEVEL_ERROR, "Message dropped!");
 }
@@ -601,8 +653,9 @@ static void outbox_sent_callback(DictionaryIterator *iterator, void *context) {
 // initialize app //
 ////////////////////
 static void init() {
-  s_main_window = window_create();
+  config_load();
   
+  s_main_window = window_create();
   window_set_window_handlers(s_main_window, (WindowHandlers) {
     .load = main_window_load,
     .unload = main_window_unload
@@ -616,12 +669,6 @@ static void init() {
   
   // Make sure the time is displayed from the start
   update_time();
-  
-//   // init hand paths
-//   s_minute_arrow = gpath_create(&MINUTE_HAND_POINTS);
-//   s_minute_filler = gpath_create(&MINUTE_HAND_FILLER);
-//   s_hour_arrow = gpath_create(&HOUR_HAND_POINTS);
-//   s_hour_filler = gpath_create(&HOUR_HAND_FILLER);
     
   // subscribe to health events 
   health_service_events_subscribe(health_handler, NULL); 
@@ -638,21 +685,15 @@ static void init() {
     .pebble_app_connection_handler = bluetooth_callback
   });
   bluetooth_callback(connection_service_peek_pebble_app_connection());  
-  
-  // register for taps
-//   accel_tap_service_subscribe(tap_handler);
-  
+    
   // Register weather callbacks
   app_message_register_inbox_received(inbox_received_callback);
   app_message_register_inbox_dropped(inbox_dropped_callback);
   app_message_register_outbox_failed(outbox_failed_callback);
   app_message_register_outbox_sent(outbox_sent_callback);  
+  app_message_open(128, 128);  
   
-  // Open AppMessage for weather callbacks
-  const int inbox_size = 128;
-  const int outbox_size = 128;
-  app_message_open(inbox_size, outbox_size);  
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "Clock show_clock_window");  
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "init");  
 }
 
 ///////////////////////
